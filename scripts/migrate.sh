@@ -36,6 +36,8 @@ Usage: migrate.sh [options]
 
 Interactive Flyway runner for MyYuumi ecommerce databases.
 
+When action is migrate, runs scripts/init-dbs.sh first (CREATE DATABASE via init/).
+
 Options:
   -d, --database NAME   Database name (e.g. customerdb) or "all"
   -s, --schema NAME     PostgreSQL schema (default: public)
@@ -237,10 +239,36 @@ run_flyway_for_database() {
     "-Dflyway.password=${FLYWAY_PASSWORD}" \
     "-Dflyway.database=${database}" \
     "-Dflyway.schemas=${FLYWAY_SCHEMA}" \
-    "-Dflyway.locations=classpath:db/migration/${database}"
+    "-Dflyway.locations=filesystem:migration/${database}"
+}
+
+run_database_init() {
+  if [[ "${SELECTED_ACTION}" != "migrate" ]]; then
+    return 0
+  fi
+
+  local init_script="${SCRIPT_DIR}/init-dbs.sh"
+  if [[ ! -x "${init_script}" && -f "${init_script}" ]]; then
+    chmod +x "${init_script}" || true
+  fi
+
+  if [[ ! -f "${init_script}" ]]; then
+    echo "Warning: ${init_script} not found; skipping database init." >&2
+    return 0
+  fi
+
+  echo ""
+  echo "==> Ensuring databases exist (init/)"
+  FLYWAY_HOST="${FLYWAY_HOST}" \
+  FLYWAY_PORT="${FLYWAY_PORT}" \
+  FLYWAY_USER="${FLYWAY_USER}" \
+  FLYWAY_PASSWORD="${FLYWAY_PASSWORD}" \
+    bash "${init_script}"
 }
 
 run_selected() {
+  run_database_init
+
   if [[ "${RUN_ALL}" == true ]]; then
     local database
     for database in "${DATABASES[@]}"; do

@@ -1,28 +1,53 @@
 # yuumi-migrations
 
-Central [Flyway](https://flywaydb.org/) migrations for **MyYuumi** ecommerce PostgreSQL databases.
+Central database scripts for **MyYuumi** ecommerce PostgreSQL databases.
 
-Each service owns a separate database (same layout as MockBank). SQL files live under `src/main/resources/db/migration/<database>/`.
+Layout matches nexthcm-migration style: SQL on the filesystem (no `src/`), Flyway via
+`filesystem:migration/...`.
 
-| Database | Service | Migration folder |
-|----------|---------|------------------|
-| `customerdb` | CustomerService | `db/migration/customerdb` |
-| `accountsdb` | AccountService | `db/migration/accountsdb` |
-| `billerdb` | BillerService | `db/migration/billerdb` |
-| `paymentdb` | PaymentOrchestrator | `db/migration/paymentdb` |
-| `settlementdb` | SettlementService | `db/migration/settlementdb` |
-| `billpayworkerdb` | BillPayWorkerService | `db/migration/billpayworkerdb` |
+```
+yuumi-migrations/
+  init/<database>/V1__init_database.sql     # CREATE DATABASE
+  migration/<database>/V1__....sql          # schema (Flyway)
+  scripts/init-dbs.sh
+  scripts/migrate.sh
+  pom.xml                                   # flyway-maven-plugin only
+```
+
+| Layer | Path | Purpose |
+|-------|------|---------|
+| Init | `init/<database>/V1__init_database.sql` | `CREATE DATABASE` (empty DBs) |
+| Migration | `migration/<database>/` | Tables, indexes, constraints (Flyway) |
+
+| Database | Service | Init | Migration |
+|----------|---------|------|-----------|
+| `keycloak` | Keycloak | `init/keycloak` | — (Keycloak manages schema) |
+| `customerdb` | CustomerService | `init/customerdb` | `migration/customerdb` |
+| `accountsdb` | AccountService | `init/accountsdb` | `migration/accountsdb` |
+| `billerdb` | BillerService | `init/billerdb` | `migration/billerdb` |
+| `paymentdb` | PaymentOrchestrator | `init/paymentdb` | `migration/paymentdb` |
+| `settlementdb` | SettlementService | `init/settlementdb` | `migration/settlementdb` |
+| `billpayworkerdb` | BillPayWorkerService | `init/billpayworkerdb` | `migration/billpayworkerdb` |
 
 ## Prerequisites
 
-Start PostgreSQL (creates all app databases on first run):
+Start PostgreSQL (container only — no SQL in infra):
 
 ```bash
-cd yuumi/yuumi-infras/observability
-docker compose up -d postgres
+cd yuumi/yuumi-infras
+podman compose up -d postgres
+# or: docker compose up -d postgres
 ```
 
-Default credentials: user `postgres`, password `1`.
+Default credentials: user `postgres`, password `1`. Requires `psql` on PATH for init.
+
+## Create databases (init)
+
+```bash
+cd yuumi/yuumi-migrations
+chmod +x scripts/init-dbs.sh
+./scripts/init-dbs.sh
+```
 
 ## Run migrations (interactive script)
 
@@ -31,6 +56,8 @@ cd yuumi/yuumi-migrations
 chmod +x scripts/migrate.sh
 ./scripts/migrate.sh
 ```
+
+When action is `migrate`, the script runs `init-dbs.sh` first, then Flyway.
 
 The script prompts for:
 
@@ -47,7 +74,7 @@ Non-interactive example:
 
 ## Run migrations (Maven)
 
-Migrate one database:
+Run from the repo root so `filesystem:migration/...` resolves correctly.
 
 ```bash
 cd yuumi/yuumi-migrations
@@ -61,6 +88,8 @@ mvn flyway:migrate@customerdb flyway:migrate@accountsdb flyway:migrate@billerdb 
 ```
 
 Other Flyway goals work the same way, e.g. `flyway:info -Paccountsdb`.
+
+Maven does **not** run `init/` — use `./scripts/init-dbs.sh` (or `migrate.sh`) first.
 
 ## Override connection
 
@@ -81,12 +110,18 @@ spring:
     enabled: false
 ```
 
-Schema is applied by this module (CI/CD or local `mvn flyway:migrate`), not at app startup.
+Schema is applied by this module (CI/CD or local `migrate.sh` / `mvn flyway:migrate`), not at app startup.
 
 ## Adding a migration
 
-1. Add `V2__description.sql` (or next version) under the correct `db/migration/<database>/` folder.
+1. Add `V2__description.sql` (or next version) under `migration/<database>/`.
 2. Never edit a migration that has already been applied in shared environments.
-3. Run `mvn flyway:migrate -P<database>` to apply locally.
+3. Run `mvn flyway:migrate -P<database>` from the repo root.
 
 Naming convention: `V{version}__{snake_case_description}.sql`
+
+## Adding a new database
+
+1. Add `init/<dbname>/V1__init_database.sql` with `CREATE DATABASE IF NOT EXISTS <dbname>;`
+2. Add Flyway folder `migration/<dbname>/`
+3. Register the DB in `pom.xml` profiles/executions and `scripts/migrate.sh` `DATABASES` array
