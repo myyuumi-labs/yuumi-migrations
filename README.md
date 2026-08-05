@@ -2,13 +2,14 @@
 
 Central database scripts for **MyYuumi** ecommerce PostgreSQL databases.
 
-Layout matches nexthcm-migration style: SQL on the filesystem (no `src/`), Flyway via
-`filesystem:migration/...`.
+Layout matches **nexthcm-migration**: SQL on the filesystem (no `src/`), per-DB Flyway
+config under `config/<env>/`, thin root `pom.xml` (no per-DB profiles/executions).
 
 ```
 yuumi-migrations/
   init/<database>/V1__init_database.sql     # CREATE DATABASE
   migration/<database>/V1__....sql          # schema (Flyway)
+  config/local/flyway_<database>.conf       # url, user, locations, schemas
   scripts/init-dbs.sh
   scripts/migrate.sh
   pom.xml                                   # flyway-maven-plugin only
@@ -18,88 +19,63 @@ yuumi-migrations/
 |-------|------|---------|
 | Init | `init/<database>/V1__init_database.sql` | `CREATE DATABASE` (empty DBs) |
 | Migration | `migration/<database>/` | Tables, indexes, constraints (Flyway) |
+| Config | `config/<env>/flyway_<database>.conf` | Connection + `filesystem:migration/...` |
 
-| Database | Service | Init | Migration |
-|----------|---------|------|-----------|
-| `keycloak` | Keycloak | `init/keycloak` | — (Keycloak manages schema) |
-| `customerdb` | CustomerService | `init/customerdb` | `migration/customerdb` |
-| `accountsdb` | AccountService | `init/accountsdb` | `migration/accountsdb` |
-| `billerdb` | BillerService | `init/billerdb` | `migration/billerdb` |
-| `paymentdb` | PaymentOrchestrator | `init/paymentdb` | `migration/paymentdb` |
-| `settlementdb` | SettlementService | `init/settlementdb` | `migration/settlementdb` |
-| `billpayworkerdb` | BillPayWorkerService | `init/billpayworkerdb` | `migration/billpayworkerdb` |
+| Database | Service | Init | Migration | Config |
+|----------|---------|------|-----------|--------|
+| `keycloak` | Keycloak | `init/keycloak` | — | — |
+| `customerdb` | CustomerService | yes | yes | `flyway_customerdb.conf` |
+| `accountsdb` | AccountService | yes | yes | `flyway_accountsdb.conf` |
+| `billerdb` | BillerService | yes | yes | `flyway_billerdb.conf` |
+| `paymentdb` | PaymentOrchestrator | yes | yes | `flyway_paymentdb.conf` |
+| `settlementdb` | SettlementService | yes | yes | `flyway_settlementdb.conf` |
+| `billpayworkerdb` | BillPayWorkerService | yes | yes | `flyway_billpayworkerdb.conf` |
+| `tenantdb` | TenantService | yes | yes | `flyway_tenantdb.conf` |
 
 ## Prerequisites
-
-Start PostgreSQL (container only — no SQL in infra):
 
 ```bash
 cd yuumi/yuumi-infras
 podman compose up -d postgres
-# or: docker compose up -d postgres
 ```
 
-Default credentials: user `postgres`, password `1`. Requires `psql` on PATH for init.
+Default credentials in `config/local/*.conf`: user `postgres`, password `1`. Requires `psql` for init.
 
 ## Create databases (init)
 
 ```bash
 cd yuumi/yuumi-migrations
-chmod +x scripts/init-dbs.sh
 ./scripts/init-dbs.sh
 ```
 
-## Run migrations (interactive script)
+## Run migrations (recommended)
 
 ```bash
-cd yuumi/yuumi-migrations
-chmod +x scripts/migrate.sh
 ./scripts/migrate.sh
+./scripts/migrate.sh -d tenantdb -a migrate -y
+./scripts/migrate.sh -d all -e local -a migrate -y
 ```
 
-When action is `migrate`, the script runs `init-dbs.sh` first, then Flyway.
+`migrate.sh` discovers databases from `config/<env>/flyway_*.conf` (add a conf file = new DB in the menu).
 
-The script prompts for:
-
-1. **Database** — pick one or `all`
-2. **Schema** — lists schemas from Postgres when `psql` is available, otherwise defaults to `public`
-3. **Action** — `migrate`, `info`, `validate`, or `repair`
-
-Non-interactive example:
+## Run migrations (Maven / nexthcm style)
 
 ```bash
-./scripts/migrate.sh -d accountsdb -s public -a migrate -y
-./scripts/migrate.sh -d all -a migrate -y
+mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_tenantdb.conf
+mvn flyway:info    -Dflyway.configFiles=$PWD/config/local/flyway_customerdb.conf
 ```
-
-## Run migrations (Maven)
-
-Run from the repo root so `filesystem:migration/...` resolves correctly.
-
-```bash
-cd yuumi/yuumi-migrations
-mvn flyway:migrate -Pcustomerdb
-```
-
-Migrate all databases:
-
-```bash
-mvn flyway:migrate@customerdb flyway:migrate@accountsdb flyway:migrate@billerdb flyway:migrate@paymentdb flyway:migrate@settlementdb flyway:migrate@billpayworkerdb
-```
-
-Other Flyway goals work the same way, e.g. `flyway:info -Paccountsdb`.
 
 Maven does **not** run `init/` — use `./scripts/init-dbs.sh` (or `migrate.sh`) first.
 
-## Override connection
+## Adding a new database
 
-```bash
-mvn flyway:migrate -Pcustomerdb -Dflyway.host=db.example.com -Dflyway.password=secret
-```
+1. `init/<dbname>/V1__init_database.sql`
+2. `migration/<dbname>/V1__....sql`
+3. `config/local/flyway_<dbname>.conf` (url + `filesystem:migration/<dbname>`)
+
+No `pom.xml` changes.
 
 ## Wire a Spring service
-
-In each service `application.yml`:
 
 ```yaml
 spring:
@@ -109,19 +85,3 @@ spring:
   flyway:
     enabled: false
 ```
-
-Schema is applied by this module (CI/CD or local `migrate.sh` / `mvn flyway:migrate`), not at app startup.
-
-## Adding a migration
-
-1. Add `V2__description.sql` (or next version) under `migration/<database>/`.
-2. Never edit a migration that has already been applied in shared environments.
-3. Run `mvn flyway:migrate -P<database>` from the repo root.
-
-Naming convention: `V{version}__{snake_case_description}.sql`
-
-## Adding a new database
-
-1. Add `init/<dbname>/V1__init_database.sql` with `CREATE DATABASE IF NOT EXISTS <dbname>;`
-2. Add Flyway folder `migration/<dbname>/`
-3. Register the DB in `pom.xml` profiles/executions and `scripts/migrate.sh` `DATABASES` array
