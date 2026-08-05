@@ -30,7 +30,7 @@ yuumi-migrations/
 | `paymentdb` | PaymentOrchestrator | yes | yes | `flyway_paymentdb.conf` |
 | `settlementdb` | SettlementService | yes | yes | `flyway_settlementdb.conf` |
 | `billpayworkerdb` | BillPayWorkerService | yes | yes | `flyway_billpayworkerdb.conf` |
-| `tenantdb` | TenantService | yes | yes | `flyway_tenantdb.conf` |
+| `accountdb` | AccountService (yuumi-account) | yes | yes | `flyway_accountdb.conf` |
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ cd yuumi/yuumi-migrations
 
 ```bash
 ./scripts/migrate.sh
-./scripts/migrate.sh -d tenantdb -a migrate -y
+./scripts/migrate.sh -d accountdb -a migrate -y
 ./scripts/migrate.sh -d all -e local -a migrate -y
 ```
 
@@ -61,7 +61,7 @@ cd yuumi/yuumi-migrations
 ## Run migrations (Maven / nexthcm style)
 
 ```bash
-mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_tenantdb.conf
+mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_accountdb.conf
 mvn flyway:info    -Dflyway.configFiles=$PWD/config/local/flyway_customerdb.conf
 ```
 

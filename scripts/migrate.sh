@@ -33,7 +33,7 @@ Per-database settings live in config/<env>/flyway_<database>.conf — not in pom
 When action is migrate, runs scripts/init-dbs.sh first (CREATE DATABASE via init/).
 
 Options:
-  -d, --database NAME   Database name (e.g. tenantdb) or "all"
+  -d, --database NAME   Database name (e.g. accountdb) or "all"
   -e, --env NAME        Config env folder under config/ (default: local)
   -s, --schema NAME     Override flyway.schemas from conf (optional)
   -a, --action ACTION   Flyway goal: migrate | info | validate | repair
@@ -46,11 +46,11 @@ Options:
 
 Examples:
   ./scripts/migrate.sh
-  ./scripts/migrate.sh -d tenantdb -a migrate -y
+  ./scripts/migrate.sh -d accountdb -a migrate -y
   ./scripts/migrate.sh -d all -e local -a migrate -y
 
 Maven equivalent:
-  mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_tenantdb.conf
+  mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_accountdb.conf
 EOF
 }
 
