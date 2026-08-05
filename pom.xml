@@ -14,13 +14,6 @@
   <properties>
     <flyway.version>10.20.1</flyway.version>
     <postgresql.version>42.7.4</postgresql.version>
-    <flyway.host>localhost</flyway.host>
-    <flyway.port>5432</flyway.port>
-    <flyway.user>postgres</flyway.user>
-    <flyway.password>1</flyway.password>
-    <flyway.database>customerdb</flyway.database>
-    <flyway.schemas>public</flyway.schemas>
-    <flyway.locations>filesystem:migration/customerdb</flyway.locations>
   </properties>
 
   <build>
@@ -29,17 +22,6 @@
         <groupId>org.flywaydb</groupId>
         <artifactId>flyway-maven-plugin</artifactId>
         <version>${flyway.version}</version>
-        <configuration>
-          <url>jdbc:postgresql://${flyway.host}:${flyway.port}/${flyway.database}</url>
-          <user>${flyway.user}</user>
-          <password>${flyway.password}</password>
-          <schemas>
-            <schema>${flyway.schemas}</schema>
-          </schemas>
-          <locations>
-            <location>${flyway.locations}</location>
-          </locations>
-        </configuration>
         <dependencies>
           <dependency>
             <groupId>org.flywaydb</groupId>
@@ -52,108 +34,7 @@
             <version>${postgresql.version}</version>
           </dependency>
         </dependencies>
-        <executions>
-          <execution>
-            <id>customerdb</id>
-            <configuration>
-              <url>jdbc:postgresql://${flyway.host}:${flyway.port}/customerdb</url>
-              <locations>
-                <location>filesystem:migration/customerdb</location>
-              </locations>
-            </configuration>
-          </execution>
-          <execution>
-            <id>accountsdb</id>
-            <configuration>
-              <url>jdbc:postgresql://${flyway.host}:${flyway.port}/accountsdb</url>
-              <locations>
-                <location>filesystem:migration/accountsdb</location>
-              </locations>
-            </configuration>
-          </execution>
-          <execution>
-            <id>billerdb</id>
-            <configuration>
-              <url>jdbc:postgresql://${flyway.host}:${flyway.port}/billerdb</url>
-              <locations>
-                <location>filesystem:migration/billerdb</location>
-              </locations>
-            </configuration>
-          </execution>
-          <execution>
-            <id>paymentdb</id>
-            <configuration>
-              <url>jdbc:postgresql://${flyway.host}:${flyway.port}/paymentdb</url>
-              <locations>
-                <location>filesystem:migration/paymentdb</location>
-              </locations>
-            </configuration>
-          </execution>
-          <execution>
-            <id>settlementdb</id>
-            <configuration>
-              <url>jdbc:postgresql://${flyway.host}:${flyway.port}/settlementdb</url>
-              <locations>
-                <location>filesystem:migration/settlementdb</location>
-              </locations>
-            </configuration>
-          </execution>
-          <execution>
-            <id>billpayworkerdb</id>
-            <configuration>
-              <url>jdbc:postgresql://${flyway.host}:${flyway.port}/billpayworkerdb</url>
-              <locations>
-                <location>filesystem:migration/billpayworkerdb</location>
-              </locations>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>
-
-  <profiles>
-    <profile>
-      <id>customerdb</id>
-      <properties>
-        <flyway.database>customerdb</flyway.database>
-        <flyway.locations>filesystem:migration/customerdb</flyway.locations>
-      </properties>
-    </profile>
-    <profile>
-      <id>accountsdb</id>
-      <properties>
-        <flyway.database>accountsdb</flyway.database>
-        <flyway.locations>filesystem:migration/accountsdb</flyway.locations>
-      </properties>
-    </profile>
-    <profile>
-      <id>billerdb</id>
-      <properties>
-        <flyway.database>billerdb</flyway.database>
-        <flyway.locations>filesystem:migration/billerdb</flyway.locations>
-      </properties>
-    </profile>
-    <profile>
-      <id>paymentdb</id>
-      <properties>
-        <flyway.database>paymentdb</flyway.database>
-        <flyway.locations>filesystem:migration/paymentdb</flyway.locations>
-      </properties>
-    </profile>
-    <profile>
-      <id>settlementdb</id>
-      <properties>
-        <flyway.database>settlementdb</flyway.database>
-        <flyway.locations>filesystem:migration/settlementdb</flyway.locations>
-      </properties>
-    </profile>
-    <profile>
-      <id>billpayworkerdb</id>
-      <properties>
-        <flyway.database>billpayworkerdb</flyway.database>
-        <flyway.locations>filesystem:migration/billpayworkerdb</flyway.locations>
-      </properties>
-    </profile>
-  </profiles>
 </project>

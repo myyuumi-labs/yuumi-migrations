@@ -4,15 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-readonly -a DATABASES=(
-  "customerdb"
-  "accountsdb"
-  "billerdb"
-  "paymentdb"
-  "settlementdb"
-  "billpayworkerdb"
-)
-
 readonly -a ACTIONS=(
   "migrate"
   "info"
@@ -25,37 +16,41 @@ FLYWAY_PORT="${FLYWAY_PORT:-5432}"
 FLYWAY_USER="${FLYWAY_USER:-postgres}"
 FLYWAY_PASSWORD="${FLYWAY_PASSWORD:-1}"
 FLYWAY_SCHEMA="${FLYWAY_SCHEMA:-}"
+FLYWAY_ENV="${FLYWAY_ENV:-local}"
 SELECTED_DATABASE=""
 SELECTED_ACTION=""
 RUN_ALL=false
 SKIP_CONFIRM=false
+DATABASES=()
 
 usage() {
   cat <<'EOF'
 Usage: migrate.sh [options]
 
-Interactive Flyway runner for MyYuumi ecommerce databases.
+Interactive Flyway runner for MyYuumi ecommerce databases (nexthcm-migration style).
 
+Per-database settings live in config/<env>/flyway_<database>.conf — not in pom.xml.
 When action is migrate, runs scripts/init-dbs.sh first (CREATE DATABASE via init/).
 
 Options:
-  -d, --database NAME   Database name (e.g. customerdb) or "all"
-  -s, --schema NAME     PostgreSQL schema (default: public)
+  -d, --database NAME   Database name (e.g. tenantdb) or "all"
+  -e, --env NAME        Config env folder under config/ (default: local)
+  -s, --schema NAME     Override flyway.schemas from conf (optional)
   -a, --action ACTION   Flyway goal: migrate | info | validate | repair
-  -H, --host HOST       PostgreSQL host (default: localhost)
-  -P, --port PORT       PostgreSQL port (default: 5432)
-  -u, --user USER       PostgreSQL user (default: postgres)
-  -p, --password PASS   PostgreSQL password (default: 1)
+  -H, --host HOST       Override host (also sets FLYWAY_HOST for init)
+  -P, --port PORT       Override port
+  -u, --user USER       Override user
+  -p, --password PASS   Override password
   -y, --yes             Skip confirmation prompt
   -h, --help            Show this help
 
-Environment variables (same names as flags):
-  FLYWAY_HOST, FLYWAY_PORT, FLYWAY_USER, FLYWAY_PASSWORD, FLYWAY_SCHEMA
-
 Examples:
   ./scripts/migrate.sh
-  ./scripts/migrate.sh -d accountsdb -s public -a migrate -y
-  ./scripts/migrate.sh -d all -a migrate -y
+  ./scripts/migrate.sh -d tenantdb -a migrate -y
+  ./scripts/migrate.sh -d all -e local -a migrate -y
+
+Maven equivalent:
+  mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_tenantdb.conf
 EOF
 }
 
@@ -64,6 +59,34 @@ require_command() {
     echo "Error: '$1' is not installed or not on PATH." >&2
     exit 1
   fi
+}
+
+load_databases_from_config() {
+  local config_dir="${PROJECT_DIR}/config/${FLYWAY_ENV}"
+  DATABASES=()
+
+  if [[ ! -d "${config_dir}" ]]; then
+    echo "Error: config env folder not found: ${config_dir}" >&2
+    exit 1
+  fi
+
+  local conf
+  for conf in "${config_dir}"/flyway_*.conf; do
+    [[ -f "${conf}" ]] || continue
+    local base
+    base="$(basename "${conf}")"
+    local db="${base#flyway_}"
+    db="${db%.conf}"
+    DATABASES+=("${db}")
+  done
+
+  if ((${#DATABASES[@]} == 0)); then
+    echo "Error: no flyway_*.conf files under ${config_dir}" >&2
+    exit 1
+  fi
+
+  IFS=$'\n' DATABASES=($(printf '%s\n' "${DATABASES[@]}" | sort))
+  unset IFS
 }
 
 is_valid_database() {
@@ -140,7 +163,7 @@ list_schemas_from_db() {
 
 select_database_interactive() {
   local -a menu_items=("${DATABASES[@]}" "all")
-  print_menu "Select database" "${menu_items[@]}"
+  print_menu "Select database (from config/${FLYWAY_ENV})" "${menu_items[@]}"
   local choice
   choice="$(read_menu_choice "${#menu_items[@]}" "Database")"
 
@@ -158,13 +181,15 @@ select_schema_interactive() {
   local default_schema="public"
 
   if [[ "${RUN_ALL}" == true ]]; then
-    read -r -p "Schema [${default_schema}]: " schema_input
-    FLYWAY_SCHEMA="${schema_input:-${default_schema}}"
+    read -r -p "Override schema (blank = use conf) [${default_schema}]: " schema_input
+    if [[ -n "${schema_input}" ]]; then
+      FLYWAY_SCHEMA="${schema_input}"
+    fi
     return 0
   fi
 
   echo ""
-  echo "Schema for database '${SELECTED_DATABASE}'"
+  echo "Schema for database '${SELECTED_DATABASE}' (blank = use conf)"
 
   local -a schemas=()
   local schema_line
@@ -173,13 +198,13 @@ select_schema_interactive() {
   done < <(list_schemas_from_db || true)
 
   if ((${#schemas[@]} > 0)); then
-    print_menu "Available schemas" "${schemas[@]}" "custom")
+    print_menu "Available schemas" "${schemas[@]}" "use conf / custom")
     local choice
     choice="$(read_menu_choice "$((${#schemas[@]} + 1))" "Schema")"
 
     if (( choice == ${#schemas[@]} + 1 )); then
-      read -r -p "Enter schema name [${default_schema}]: " schema_input
-      FLYWAY_SCHEMA="${schema_input:-${default_schema}}"
+      read -r -p "Enter schema name (blank = use conf): " schema_input
+      FLYWAY_SCHEMA="${schema_input}"
       return 0
     fi
 
@@ -187,8 +212,8 @@ select_schema_interactive() {
     return 0
   fi
 
-  read -r -p "Schema [${default_schema}]: " schema_input
-  FLYWAY_SCHEMA="${schema_input:-${default_schema}}"
+  read -r -p "Schema (blank = use conf): " schema_input
+  FLYWAY_SCHEMA="${schema_input}"
 }
 
 select_action_interactive() {
@@ -205,14 +230,20 @@ confirm_run() {
 
   echo ""
   echo "Summary"
-  echo "  Host:     ${FLYWAY_HOST}:${FLYWAY_PORT}"
+  echo "  Env:      ${FLYWAY_ENV}"
+  echo "  Host:     ${FLYWAY_HOST}:${FLYWAY_PORT} (init / overrides)"
   echo "  User:     ${FLYWAY_USER}"
   if [[ "${RUN_ALL}" == true ]]; then
     echo "  Database: all (${DATABASES[*]})"
   else
     echo "  Database: ${SELECTED_DATABASE}"
+    echo "  Config:   config/${FLYWAY_ENV}/flyway_${SELECTED_DATABASE}.conf"
   fi
-  echo "  Schema:   ${FLYWAY_SCHEMA}"
+  if [[ -n "${FLYWAY_SCHEMA}" ]]; then
+    echo "  Schema:   ${FLYWAY_SCHEMA} (override)"
+  else
+    echo "  Schema:   (from conf)"
+  fi
   echo "  Action:   flyway:${SELECTED_ACTION}"
   echo ""
 
@@ -225,21 +256,39 @@ confirm_run() {
 
 run_flyway_for_database() {
   local database="$1"
+  local config_file="${PROJECT_DIR}/config/${FLYWAY_ENV}/flyway_${database}.conf"
+
+  if [[ ! -f "${config_file}" ]]; then
+    echo "Error: missing Flyway config: ${config_file}" >&2
+    exit 1
+  fi
 
   echo ""
-  echo "==> ${database} (schema: ${FLYWAY_SCHEMA})"
+  echo "==> ${database} (config/${FLYWAY_ENV}/flyway_${database}.conf)"
 
-  mvn -f "${PROJECT_DIR}/pom.xml" \
-    -q \
-    "flyway:${SELECTED_ACTION}" \
-    "-P${database}" \
-    "-Dflyway.host=${FLYWAY_HOST}" \
-    "-Dflyway.port=${FLYWAY_PORT}" \
-    "-Dflyway.user=${FLYWAY_USER}" \
-    "-Dflyway.password=${FLYWAY_PASSWORD}" \
-    "-Dflyway.database=${database}" \
-    "-Dflyway.schemas=${FLYWAY_SCHEMA}" \
-    "-Dflyway.locations=filesystem:migration/${database}"
+  local -a mvn_args=(
+    -f "${PROJECT_DIR}/pom.xml"
+    -q
+    "flyway:${SELECTED_ACTION}"
+    "-Dflyway.configFiles=${config_file}"
+  )
+
+  if [[ -n "${FLYWAY_SCHEMA}" ]]; then
+    mvn_args+=("-Dflyway.schemas=${FLYWAY_SCHEMA}")
+  fi
+
+  # Optional connection overrides (useful for CI / docker host)
+  if [[ -n "${FLYWAY_HOST}" ]]; then
+    mvn_args+=("-Dflyway.url=jdbc:postgresql://${FLYWAY_HOST}:${FLYWAY_PORT}/${database}")
+  fi
+  if [[ -n "${FLYWAY_USER}" ]]; then
+    mvn_args+=("-Dflyway.user=${FLYWAY_USER}")
+  fi
+  if [[ -n "${FLYWAY_PASSWORD}" ]]; then
+    mvn_args+=("-Dflyway.password=${FLYWAY_PASSWORD}")
+  fi
+
+  mvn "${mvn_args[@]}"
 }
 
 run_database_init() {
@@ -288,13 +337,15 @@ parse_args() {
         if [[ "$2" == "all" ]]; then
           RUN_ALL=true
           SELECTED_DATABASE=""
-        elif is_valid_database "$2"; then
+        else
           SELECTED_DATABASE="$2"
           RUN_ALL=false
-        else
-          echo "Unknown database: $2" >&2
-          exit 1
         fi
+        shift 2
+        ;;
+      -e|--env)
+        [[ $# -ge 2 ]] || { echo "Missing value for ${1}" >&2; exit 1; }
+        FLYWAY_ENV="$2"
         shift 2
         ;;
       -s|--schema)
@@ -355,16 +406,27 @@ main() {
 
   cd "${PROJECT_DIR}"
 
+  load_databases_from_config
+
+  if [[ "${RUN_ALL}" == false && -n "${SELECTED_DATABASE}" ]]; then
+    if ! is_valid_database "${SELECTED_DATABASE}"; then
+      echo "Unknown database: ${SELECTED_DATABASE}" >&2
+      echo "Known (config/${FLYWAY_ENV}): ${DATABASES[*]}" >&2
+      exit 1
+    fi
+  fi
+
   if [[ "${RUN_ALL}" == false && -z "${SELECTED_DATABASE}" ]]; then
     select_database_interactive
   fi
 
-  if [[ -z "${FLYWAY_SCHEMA}" ]]; then
-    select_schema_interactive
-  fi
-
   if [[ -z "${SELECTED_ACTION}" ]]; then
     select_action_interactive
+  fi
+
+  # Only prompt for schema override when interactive and not already set via -s
+  if [[ "${SKIP_CONFIRM}" == false && -z "${FLYWAY_SCHEMA}" ]]; then
+    select_schema_interactive
   fi
 
   confirm_run
