@@ -23,13 +23,6 @@ yuumi-migrations/
 
 | Database | Service | Init | Migration | Config |
 |----------|---------|------|-----------|--------|
-| `keycloak` | Keycloak | `init/keycloak` | — | — |
-| `customerdb` | CustomerService | yes | yes | `flyway_customerdb.conf` |
-| `accountsdb` | AccountService | yes | yes | `flyway_accountsdb.conf` |
-| `billerdb` | BillerService | yes | yes | `flyway_billerdb.conf` |
-| `paymentdb` | PaymentOrchestrator | yes | yes | `flyway_paymentdb.conf` |
-| `settlementdb` | SettlementService | yes | yes | `flyway_settlementdb.conf` |
-| `billpayworkerdb` | BillPayWorkerService | yes | yes | `flyway_billpayworkerdb.conf` |
 | `accountdb` | AccountService (yuumi-account) | yes | yes | `flyway_accountdb.conf` |
 
 ## Prerequisites
@@ -62,7 +55,7 @@ cd yuumi/yuumi-migrations
 
 ```bash
 mvn flyway:migrate -Dflyway.configFiles=$PWD/config/local/flyway_accountdb.conf
-mvn flyway:info    -Dflyway.configFiles=$PWD/config/local/flyway_customerdb.conf
+mvn flyway:info    -Dflyway.configFiles=$PWD/config/local/flyway_accountdb.conf
 ```
 
 Maven does **not** run `init/` — use `./scripts/init-dbs.sh` (or `migrate.sh`) first.
